@@ -1,0 +1,370 @@
+---
+title: "Official and cleaned"
+author: "Kylie + ChatGPT"
+date: "2026-02-13"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+install.packages("dplyr")
+library(dplyr)
+```
+
+
+```{r}
+#ECOTOX again see current draft of review as of 11/17/25
+
+Hell_ECOTOX_search_Bgen<- read.csv(file = "Hell_ECOTOX_search_Bgen.txt", header = TRUE, sep = "|")
+Hell_ECOTOX_search_A<- read.csv(file = "Hell_ECOTOX_search_A.txt", header = TRUE, sep = "|")
+
+
+#combine results to one bigger table
+Hell_ECOTOX_Search_AB<-bind_rows(Hell_ECOTOX_search_A, Hell_ECOTOX_search_Bgen)
+
+```
+
+```{r}
+write.csv(Hell_ECOTOX_Search_AB, file = "Hell_ECOTOX_Search_AB.csv", sep = ",")
+
+```
+
+
+
+```{r}
+
+###############################################################
+# ECOTOX Genetics → GO-aware pathway clustering using
+# Effect.Measurement + pooled Species.Group
+###############################################################
+
+# ==========================
+# 0. Libraries
+# ==========================
+library(dplyr)
+library(stringr)
+library(conflicted)
+
+conflicts_prefer(dplyr::select)
+conflicts_prefer(dplyr::filter)
+
+# ==========================
+# 1. Read ECOTOX file
+# ==========================
+Hell_ECOTOX_Search_AB <- read.csv(
+  "Hell_ECOTOX_Search_AB.csv",
+  stringsAsFactors = FALSE
+)
+
+# Clean column names
+names(Hell_ECOTOX_Search_AB) <- make.names(names(Hell_ECOTOX_Search_AB))
+
+# ==========================
+# 2. Filter to Genetics effects ONLY
+# ==========================
+Hell_ECOTOX_Genetics <- Hell_ECOTOX_Search_AB %>%
+  filter(str_detect(tolower(Effect), "genetic"))
+
+# ==========================
+# 3. Pool Species.Group → BaseGroup (ROBUST)
+# ==========================
+extract_base_group <- function(group) {
+  
+  g <- tolower(group)
+  
+  case_when(
+    str_detect(g, "alga") ~ "Algae",
+    str_detect(g, "plant|flower|tree|shrub|fern") ~ "Plants",
+    str_detect(g, "fish") ~ "Fish",
+    str_detect(g, "amphib") ~ "Amphibians",
+    str_detect(g, "reptil") ~ "Reptiles",
+    str_detect(g, "invert|insect|crustace|mollusc|worm|spider") ~
+      "Macroinvertebrates",
+    TRUE ~ "Other"
+  )
+}
+
+Hell_ECOTOX_Genetics <- Hell_ECOTOX_Genetics %>%
+  mutate(BaseGroup = extract_base_group(Species.Group))
+
+# ==========================
+# 4. GO-aware text classifier
+#    (APPLIED TO Effect.Measurement)
+# ==========================
+map_text_to_pathway <- function(text) {
+  if (is.na(text)) return("Unclassified")
+  
+  t <- tolower(text)
+  
+  case_when(
+    # Oxidative stress / redox
+    str_detect(t, "superoxide|oxidative|peroxidase|catalase|glutathione|thioredoxin|peroxiredoxin|nrf2|keap|heme oxygenase|metallothionein") ~
+      "Oxidative stress / redox homeostasis",
+    
+    # Xenobiotic metabolism
+    str_detect(t, "cyp|cytochrome p450|ugt|sult|abc transporter|pregnane x receptor|aryl hydrocarbon receptor|pxr|ahr") ~
+      "Xenobiotic metabolism and detoxification",
+    
+    # Lipid & energy metabolism
+    str_detect(t, "lipid|fatty acid|cholesterol|lipoprotein|apolipoprotein|acyl|carnitine|beta-oxidation|triglyceride|squalene|hmg|ppar") ~
+      "Lipid and energy metabolism",
+    
+    # Hormone & endocrine signaling
+    str_detect(t, "estrogen|androgen|thyroid|corticosteroid|progesterone|glucocorticoid|mineralocorticoid|hormone receptor|transthyretin|deiodinase") ~
+      "Hormone and endocrine signaling",
+    
+    # Reproduction
+    str_detect(t, "vitellogenin|vtg|gonad|oocyte|spermat|follicle|luteinizing|fsh|gnrh|dmrt|foxl2|sox9|anti-mullerian") ~
+      "Reproduction and gametogenesis",
+    
+    # Immune response
+    str_detect(t, "interleukin|tnf|nf[- ]?kb|cytokine|chemokine|toll-like|tlr|immunoglobulin|complement|lysozyme|myd88|interferon") ~
+      "Immune and inflammatory response",
+    
+    # Stress response
+    str_detect(t, "heat shock|hsp|stress response|hypoxia|hif") ~
+      "Cellular stress response",
+    
+    # Cell cycle / apoptosis / DNA damage
+    str_detect(t, "apoptosis|bax|bcl|caspase|p53|pcna|cell cycle|cyclin|dna damage|mutation|micronuclei|mitotic") ~
+      "Cell cycle control and apoptosis",
+    
+    # Growth & development
+    str_detect(t, "growth hormone|igf|fgf|bmp|wnt|hedgehog|notch|homeobox|hox|development|morphogenesis") ~
+      "Growth and development",
+    
+    # Neural signaling
+    str_detect(t, "dopamine|serotonin|gaba|acetylcholine|synapsin|neuro|opsin|rhodopsin|neuropeptide") ~
+      "Neural signaling and behavior",
+    
+    # Epigenetic regulation
+    str_detect(t, "dna methylation|methyltransferase|histone|chromatin|epigenetic|mirna|microrna") ~
+      "Epigenetic and transcriptional regulation",
+    
+    # Protein turnover
+    str_detect(t, "proteasome|ubiquitin|autophagy|lysosome|cathepsin") ~
+      "Protein turnover and autophagy",
+    
+    # Structural / cytoskeleton
+    str_detect(t, "actin|myosin|tubulin|collagen|cytoskeleton|extracellular matrix|tight junction|claudin|occludin") ~
+      "Cell structure and tissue organization",
+    
+    # Transport & membrane
+    str_detect(t, "solute carrier|transporter|channel|atpase|ion channel|pump") ~
+      "Transport and membrane function",
+    
+    # Generic gene expression endpoints
+    str_detect(t, "gene expression|mrna|rna concentration|multiple measurement") ~
+      "Gene expression (general)",
+    
+    TRUE ~ "Other biological processes"
+  )
+}
+
+# ==========================
+# 5. Apply pathway clustering
+# ==========================
+Hell_ECOTOX_Genetics$Descriptive_Pathway <- vapply(
+  Hell_ECOTOX_Genetics$Effect.Measurement,
+  map_text_to_pathway,
+  character(1)
+)
+
+# ==========================
+# 6. Prepare output (same style as before)
+# ==========================
+Hell_ECOTOX_output <- Hell_ECOTOX_Genetics %>%
+  select(
+    X.Species.Common.Name,
+    Species.Group,
+    BaseGroup,
+    Effect,
+    Effect.Measurement,
+    Descriptive_Pathway
+  )
+
+# ==========================
+# 7. Write output CSV
+# ==========================
+write.csv(
+  Hell_ECOTOX_output,
+  "Hell_ECOTOX_Genetics_GO_Aware_Pathways_Pooled.csv",
+  row.names = FALSE
+)
+
+cat("ECOTOX Genetics pathway clustering complete.\n")
+cat("Output file: Hell_ECOTOX_Genetics_GO_Aware_Pathways_Pooled.csv\n")
+
+```
+
+
+
+#now plot it
+
+
+```{r}
+
+library(ggplot2)
+library(dplyr)
+library(forcats)
+library(ggbreak)   # for axis break
+
+```
+
+#plotting
+```{r}
+# Read the processed ECOTOX output
+df_plot_Try1 <- read.csv(
+  "Hell_ECOTOX_Genetics_GO_Aware_Pathways_Pooled.csv",
+  stringsAsFactors = FALSE
+)
+
+# Ensure BaseGroup stacking order
+df_plot_Try1$BaseGroup <- factor(
+  df_plot_Try1$BaseGroup,
+  levels = c(
+    "Fish",
+    "Reptiles",
+    "Amphibians",
+    "Macroinvertebrates",
+    "Plants",
+    "Algae"
+  )
+)
+
+# Count species studies per pathway × BaseGroup
+plot_data_Try1 <- df_plot_Try1 %>%
+  distinct(X.Species.Common.Name, BaseGroup, Descriptive_Pathway) %>%
+  count(Descriptive_Pathway, BaseGroup, name = "n")
+
+```
+
+```{r}
+group_colors <- c(
+  "Algae"               = "#66c2a5",
+  "Plants"              = "#a6d854",
+  "Macroinvertebrates"  = "#fc8d62",
+  "Amphibians"          = "#8da0cb",
+  "Reptiles"            = "#e78ac3",
+  "Fish"                = "#1f78b4"
+)
+
+
+```
+
+```{r}
+ggplot(
+  plot_data_Try1,
+  aes(
+    x = fct_reorder(Descriptive_Pathway, n, .fun = sum),
+    y = n,
+    fill = BaseGroup
+  )
+) +
+  geom_bar(
+    stat = "identity",
+    width = 0.8,
+    color = "black",
+    linewidth = 0.2
+  ) +
+  
+  #uncomment this if distribution sucks
+  # Broken y-axis to compress dominant pathway
+  #scale_y_break(
+  #  c(40, 200),  # adjust based on your data distribution
+  #  scales = 0.5
+ # ) +
+  
+  scale_fill_manual(
+    values = group_colors,
+    drop = FALSE
+  ) +
+  
+  labs(
+    x = "Biological pathway",
+    y = "Number of Species Studied",
+    fill = "Taxonomic group"
+  ) +
+  
+  theme_bw(base_size = 12) +
+  theme(
+    axis.text.x = element_text(
+      angle = 45,
+      hjust = 1,
+      vjust = 1
+    ),
+    panel.grid.major.x = element_blank(),
+    panel.grid.minor = element_blank(),
+    legend.position = "right",
+    plot.title = element_text(face = "bold"),
+    plot.subtitle = element_text(size = 10)
+  )
+
+```
+
+
+```{r}
+
+# Sideways stacked bar plot
+PlotTry1 <-ggplot(
+  plot_data_Try1,
+  aes(
+    y = fct_reorder(Descriptive_Pathway, n, .fun = sum),
+    x = n,
+    fill = BaseGroup
+  )
+) +
+  geom_bar(
+    stat = "identity",
+    width = 0.75,
+    color = "black",
+    linewidth = 0.2
+  ) +
+  
+  # Broken axis (now x-axis)
+ # scale_x_break(
+  #  c(40, 200),  # adjust to your data
+  #  scales = 0.5
+  #) +
+  
+  scale_fill_manual(
+    values = group_colors,
+    drop = FALSE
+  ) +
+  
+  labs(
+    x = "Number of Species Studied",
+    y = "Biological Pathway",
+    fill = "Taxonomic group"
+  ) +
+  
+  theme_bw(base_size = 12) +
+  theme(
+    panel.grid.major.y = element_blank(),
+    panel.grid.minor = element_blank(),
+    
+    # Inset legend
+    legend.position = c(0.75, 0.25),
+    legend.background = element_rect(
+      fill = "white",
+      color = "black",
+      linewidth = 0.3
+    ),
+    legend.key.size = unit(0.5, "lines"),
+    
+    plot.title = element_text(face = "bold")
+  )
+
+ggsave(
+  filename = "ECOTOX_Genetics_Pathways_StackedBar.png",
+  plot = PlotTry1,
+  width = 10,
+  height = 7,
+  dpi = 300
+)
+
+```
+

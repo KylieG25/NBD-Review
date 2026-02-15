@@ -1,0 +1,1175 @@
+---
+title: "ECOTOX_Last_Try"
+author: "Kylie"
+date: "2025-11-17"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## R Markdown
+
+This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
+
+When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
+
+```{r}
+setwd("C:/../ECOTOX_review")
+
+install.packages("dplyr")
+library(dplyr)
+```
+
+
+```{r}
+#ECOTOX again see current draft of review as of 11/17/25
+
+Hell_ECOTOX_search_Bgen<- read.csv(file = "Hell_ECOTOX_search_Bgen.txt", header = TRUE, sep = "|")
+Hell_ECOTOX_search_A<- read.csv(file = "Hell_ECOTOX_search_A.txt", header = TRUE, sep = "|")
+
+
+#combine results to one bigger table
+Hell_ECOTOX_Search_AB<-bind_rows(Hell_ECOTOX_search_A, Hell_ECOTOX_search_Bgen)
+
+```
+
+```{r}
+write.csv(Hell_ECOTOX_Search_AB, file = "Hell_ECOTOX_Search_AB.csv", sep = ",")
+
+```
+
+
+
+```{r}
+# Unique entry parsing
+##for different variable unique result counts just swap "Effect.Measurement"
+
+sort(table(Hell_ECOTOX_Search_AB$Effect.Measurement), decreasing = TRUE)
+
+#sort for species
+Beans_df <- Hell_ECOTOX_Search_AB %>%
+  group_by(Effect.Measurement) %>%
+  summarise(n_species = n_distinct(X.Species.Common.Name)) %>%
+  arrange(desc(n_species))
+
+
+library(ggplot2)
+
+
+Beans_df10 <- Beans_df[1:10, ]
+
+Beans_df10_plot<- ggplot(Beans_df10, aes(x= Effect.Measurement, y = n_species)) +
+  geom_col(fill = "coral4") +
+  geom_text(aes(label = n_species), 
+            vjust = -0.3, 
+            size = 4) +
+  labs(
+    x = "Effect Measurement",
+    y = "Number of Species",) +
+  scale_y_continuous(limits = c(0, 35)) +
+  theme_minimal() +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1, size = 12),  # ← axis text size
+    axis.text.y = element_text(size = 12),                         # ← axis text size
+    axis.title.x = element_text(size = 14),
+    axis.title.y = element_text(size = 14)
+  )
+
+print(Beans_df10_plot)
+
+ggsave("ECOTOX_top10.png", plot= Beans_df10_plot, dpi = 300 )
+```
+
+```{r}
+
+#sort for species
+Beans_df_2 <- Hell_ECOTOX_Search_AB %>%
+  group_by(Species.Scientific.Name.) %>%
+  summarise(Effects_Reported = n_distinct(Effect.Measurement)) %>%
+  arrange(desc(Effects_Reported))
+
+
+library(ggplot2)
+install.packages("ggbreak")
+library(ggbreak)
+
+Beans_df10_spp <- Beans_df_2[1:10, ]
+
+Beans_df10_spp_plot<- ggplot(Beans_df10_spp, aes(x= Species.Scientific.Name., y = Effects_Reported)) +
+  geom_col(fill = "coral4") +
+  geom_text(aes(label = Effects_Reported), 
+            vjust = -0.3, 
+            size = 4) +
+  labs(
+    x = "Species",
+    y = "Effects Reported"
+  ) +
+  scale_y_continuous(limits = c(0, 1400)) +
+  theme_minimal() +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1, size = 12),  # ← axis text size
+    axis.text.y = element_text(size = 12),                         # ← axis text size
+    axis.title.x = element_text(size = 14),
+    axis.title.y = element_text(size = 14)
+  )
+
+print(Beans_df10_spp_plot)
+
+ggsave("ECOTOX_Spp_top10.png", plot= Beans_df10_spp_plot, dpi = 300 )
+
+```
+
+
+```{r}
+unique(Hell_ECOTOX_Search_AB$Effect.Measurement)
+
+
+Hell_ECOTOX_Search_AB %>%
+  filter(Effect == "Genetics") %>%
+  group_by(Effect.Measurement) %>%   # <-- use the column containing the specific measurement
+  summarise(n_species = n_distinct(X.Species.Common.Name)) %>%
+  arrange(desc(n_species))
+
+```
+
+```{r}
+library(dplyr)
+library(stringr)
+
+Hell_AB_Genetics_summary <- Hell_ECOTOX_Search_AB %>%
+  filter(Effect == "Genetics") %>%                 # keep Genetics only
+  group_by(X.Citation) %>%                         # one row per citation
+  summarise(
+    Effect.Measurements = paste0(
+      sort(unique(Effect.Measurement)),            # unique measurements
+      collapse = ", "                              # combine into one cell
+    ),
+    .groups = "drop"
+  )
+
+# Write to CSV
+write.csv(Hell_AB_Genetics_summary, 
+          "Genetics_summary.csv", 
+          row.names = FALSE)
+
+
+#minimum below 100 ppb concs only
+
+Hell_AB_Genetics_summary_3 <- Hell_ECOTOX_Search_AB %>%
+  filter(
+    Effect == "Genetics",
+    X.Conc.Min.1..Standardized.. < 0.1          # keep only conc < 0.1
+  ) %>%
+  group_by(X.Citation) %>%                     # one row per citation
+  summarise(
+    Effect.Measurements = paste0(
+      sort(unique(Effect.Measurement)),        # unique measurements merged
+      collapse = ", "
+    ),
+    .groups = "drop"
+  )
+
+# Write to CSV
+write.csv(Hell_AB_Genetics_summary_3,
+          "Genetics_summary_3.csv",
+          row.names = FALSE)
+
+
+#add spp name and max conc
+Hell_AB_Genetics_summary_4 <- Hell_ECOTOX_Search_AB %>%
+  filter(
+    Effect == "Genetics",
+    X.Conc.1.Max..Standardized.. < 0.1
+  ) %>%
+  group_by(X.Citation) %>%
+  summarise(
+    Effect.Measurements = paste0(
+      sort(unique(Effect.Measurement)),
+      collapse = ", "
+    ),
+    Species.Scientific.Name = paste0(
+      sort(unique(Species.Scientific.Name.)),
+      collapse = "; "
+    ),
+    X.Conc.1.Max..Standardized.. = paste0(
+      sort(unique(X.Conc.1.Max..Standardized..)),
+      collapse = "; "
+    ),
+    .groups = "drop"
+  )
+
+# Write to CSV
+write.csv(Hell_AB_Genetics_summary_4,
+          "Genetics_summary_4.csv",
+          row.names = FALSE)
+
+
+getwd()
+```
+
+```{r}
+#count 
+library(stringr)
+
+text <- "
+BPAF
+PFOS
+PFBS
+DiPAPs
+BPAF, PFOA
+diPAPs
+PFOS
+BPAF
+PFOA
+HPFO-TA
+PFOA, PFOS
+BPAF
+PFOS, F-53B
+PFOS
+BPAF
+PFOA, PFOS, and 6:2 Cl-PFESA
+PFOA, PFOS, and 6:2 Cl-PFESA
+PFOS, PFOA,PFNA,PFDA
+6:6 and 8:8 PFPiAs
+6:6, 6:8 and 8:8 PFPiAs
+PFOS, F-53B
+PFOA, PFOSA
+PFOS, PFBS
+PFOS, PFECHS, FBSA
+Broflanilide
+BPAF
+BPAF
+PFOS
+PFOS
+FC8-diol
+PFOS, PFOA, or PFHxS
+F-53B
+F-53B
+PFOS
+PFOS, F-53B, OBS
+PFOA, FC8-diol, FC10-diol, FC8-DOD, HFPO-DA
+6:1 FTOH, PFPeA, PFHpA, PFOA, PFNA, PFUdA, PFTrDA, PFTeDA, PF4OPeA, PFPB, PFTDoDA, FC8-diol, FC10-diol, FC8-DoD, FHxSA, N-EtFOSA-M, PFHxS, PFOS, 4:2 FTS, 6:2 FTS, 8:2 FTS, PFTP
+PFPeA, PFHpA, PFOA, PFNA, PFUdA, PFTrDA, PFTeDA, PF4OPeA, PFPB, FC8diol, FC10diol, FC8DoD, FHxSA, N-EtFOSA-M, PFHxS, PFOS, 4:2FTS, 6:2FTS, 8:2FTS, PFTP
+OBS
+Broflanilide
+BPAF
+PFOS
+PFOA
+PFOS
+HFPO-TA
+HFPO-TA
+OBS
+"
+
+# Split on commas, newlines, "and", "or"
+parts <- unlist(str_split(text, "\\n|,|\\band\\b|\\bor\\b"))
+
+# Clean whitespace
+parts <- str_trim(parts)
+
+# Remove empties
+parts <- parts[parts != ""]
+
+# Normalize case for uniqueness but keep original form
+unique_abbrev <- parts[!duplicated(toupper(parts))]
+
+# Output count
+cat("Number of unique abbreviations:", length(unique_abbrev), "\n\n")
+
+# Output list
+cat("Unique abbreviations:\n")
+print(unique_abbrev)
+
+
+```
+
+```{r}
+#Figure for results parsing
+install.packages("forcats")
+
+#first how many species and compounds overall?
+library(dplyr)
+library(ggplot2)
+library(forcats)
+
+extract_base_group <- function(x) {
+  sub(";.*", "", x)   # take only the part before the first semicolon
+}
+
+
+taxonomy_grouping <- Hell_ECOTOX_Search_AB %>% 
+  group_by(Species.Group) %>%
+  summarise(n_species = n_distinct(X.Species.Common.Name))
+
+tax_plot_ecotox <- taxonomy_grouping %>%
+  mutate(BaseGroup = extract_base_group(Species.Group)) %>%   # pooled group
+  group_by(BaseGroup) %>%
+  summarise(n_species = sum(n_species), .groups = "drop") %>% 
+  ggplot(aes(x = BaseGroup, y = n_species, fill = BaseGroup)) +
+  geom_col() +
+  geom_text(aes(label = n_species), 
+            vjust = -0.3, size = 4) +
+    scale_y_continuous(limits = c(0, 45)) +     # ← y-axis max at 45
+  guides(fill = "none") +                     # ← remove legend
+  labs(x = "Species Group (Pooled)",
+       y = "Number of Species",
+       fill = "Species Group") +
+  theme_minimal() +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1, size = 12),
+    axis.text.y = element_text(size = 12),
+    axis.title.x = element_text(size = 14),
+    axis.title.y = element_text(size = 14)
+  )
+
+print(tax_plot_ecotox)
+
+
+```
+
+```{r}
+#clean up thanks chatgpt
+library(dplyr)
+library(ggplot2)
+library(stringr)
+library(forcats)
+
+# Function: extract base group before first semicolon
+extract_base_group <- function(x) {
+  sub(";.*", "", x)
+}
+
+taxonomy_grouping <- Hell_ECOTOX_Search_AB %>% 
+  group_by(Species.Group) %>%
+  summarise(n_species = n_distinct(X.Species.Common.Name))
+
+tax_plot_ecotox <- taxonomy_grouping %>%
+  
+  # 1. Collapse to base group
+  mutate(BaseGroup = extract_base_group(Species.Group)) %>%
+  
+  # 2. Rename plant group
+  mutate(BaseGroup = ifelse(BaseGroup == "Flowers, Trees, Shrubs, Ferns",
+                            "Plants",
+                            BaseGroup)) %>%
+  
+  # 3. Pool invertebrate-related groups
+  mutate(BaseGroup = case_when(
+    BaseGroup %in% c("Invertebrates", "Insects/Spiders", "Crustaceans",
+                     "Molluscs", "Worms") ~ "Invertebrates",
+    TRUE ~ BaseGroup
+  )) %>%
+  
+  # 4. Summarize after pooling
+  group_by(BaseGroup) %>%
+  summarise(n_species = sum(n_species), .groups = "drop") %>%
+  
+  # 5. Sort bars in descending order
+  mutate(BaseGroup = fct_reorder(BaseGroup, n_species, .desc = TRUE)) %>%
+  
+  # 6. Plot
+  ggplot(aes(x = BaseGroup, y = n_species, fill = BaseGroup)) +
+  geom_col() +
+  geom_text(aes(label = n_species), 
+            vjust = -0.3, size = 4) +
+    scale_y_continuous(limits = c(0, 45)) +     # ← y-axis max at 45
+  guides(fill = "none") +                     # ← remove legend
+  labs(x = "Species Group (Pooled)",
+       y = "Number of Species",
+       fill = "Species Group") +
+  theme_minimal() +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1, size = 12),
+    axis.text.y = element_text(size = 12),
+    axis.title.x = element_text(size = 14),
+    axis.title.y = element_text(size = 14)
+  )
+
+print(tax_plot_ecotox)
+
+ggsave("tax_plot_ecotox.png", plot= tax_plot_ecotox, dpi = 300 )
+```
+
+```{r}
+#try for pie
+
+library(dplyr)
+library(ggplot2)
+library(forcats)
+
+extract_base_group <- function(x) {
+  sub(";.*", "", x)
+}
+
+# Pool species groups
+Hell_ECOTOX_pooled <- Hell_ECOTOX_Search_AB %>%
+  mutate(BaseGroup = extract_base_group(Species.Group)) %>%
+  mutate(BaseGroup = ifelse(BaseGroup == "Flowers, Trees, Shrubs, Ferns",
+                            "Plants",
+                            BaseGroup)) %>%
+  mutate(BaseGroup = case_when(
+    BaseGroup %in% c("Invertebrates", "Insects/Spiders",
+                     "Crustaceans", "Molluscs", "Worms") ~ "Invertebrates",
+    TRUE ~ BaseGroup
+  ))
+
+# Count species per chemical
+chem_counts <- Hell_ECOTOX_pooled %>%
+  group_by(BaseGroup, X.Chemical.Name) %>%
+  summarise(n_species = n_distinct(X.Species.Common.Name), .groups = "drop")
+
+# For each BaseGroup, keep top 19 chemicals and pool the rest into "Other"
+chem_counts_top <- chem_counts %>%
+  group_by(BaseGroup) %>%
+  arrange(desc(n_species)) %>%
+  mutate(rank = row_number()) %>%
+  mutate(X.Chemical.Name = ifelse(rank > 9, "Other", X.Chemical.Name)) %>%
+  group_by(BaseGroup, X.Chemical.Name) %>%
+  summarise(n_species = sum(n_species), .groups = "drop") %>%
+  ungroup()
+
+# Compute fractions for pie chart
+chem_counts_top <- chem_counts_top %>%
+  group_by(BaseGroup) %>%
+  mutate(
+    frac = n_species / sum(n_species),
+    ymax = cumsum(frac),
+    ymin = ymax - frac,
+    label_pos = (ymax + ymin) / 2
+  )
+
+# Make BaseGroup a factor for ordering
+chem_counts_top <- chem_counts_top %>%
+  mutate(BaseGroup = fct_reorder(BaseGroup, n_species, .fun = sum, .desc = TRUE))
+
+# Plot pie charts
+pie_plot <- ggplot(chem_counts_top, 
+                   aes(x = "", y = frac, fill = X.Chemical.Name)) +
+  geom_bar(stat = "identity", width = 1, color = "white") +
+  coord_polar(theta = "y") +
+  facet_wrap(~ BaseGroup, ncol = 3) +  # one pie per species group
+  geom_text(aes(label = n_species, y = label_pos), color = "white", size = 3) +
+  theme_void() +
+  theme(
+    strip.text = element_text(size = 12, face = "bold"),
+    legend.position = "none"
+  ) +
+  labs(fill = "Chemical")
+
+print(pie_plot)
+
+
+```
+
+
+```{r}
+library(dplyr)
+library(ggplot2)
+library(stringr)
+library(forcats)
+
+# Function to extract base species group
+extract_base_group <- function(x) {
+  sub(";.*", "", x)
+}
+
+# Pool species groups (without altering original data)
+Hell_ECOTOX_pooled <- Hell_ECOTOX_Search_AB %>%
+  mutate(BaseGroup = extract_base_group(Species.Group)) %>%
+  mutate(BaseGroup = ifelse(BaseGroup == "Flowers, Trees, Shrubs, Ferns",
+                            "Plants",
+                            BaseGroup)) %>%
+  mutate(BaseGroup = case_when(
+    BaseGroup %in% c("Invertebrates", "Insects/Spiders", 
+                     "Crustaceans", "Molluscs", "Worms") ~ "Invertebrates",
+    TRUE ~ BaseGroup
+  ))
+
+# Count species per effect + pooled species group
+effect_counts <- Hell_ECOTOX_pooled %>% 
+  group_by(Effect.Measurement, BaseGroup) %>%
+  summarise(n_species = n_distinct(X.Species.Common.Name), .groups = "drop")
+
+# Identify top 10 effects by total species affected
+top10_effects <- effect_counts %>%
+  group_by(Effect.Measurement) %>%
+  summarise(total_species = sum(n_species)) %>%
+  arrange(desc(total_species)) %>%
+  slice_head(n = 10) %>%
+  pull(Effect.Measurement)
+
+# Filter original summarized data to top 10 only
+effect_top10 <- effect_counts %>%
+  filter(Effect.Measurement %in% top10_effects) %>%
+  mutate(Effect.Measurement = fct_reorder(Effect.Measurement, n_species, .fun = sum, .desc = TRUE))
+
+# Plot
+effect_plot <- ggplot(effect_top10,
+                      aes(x = Effect.Measurement, 
+                          y = n_species,
+                          fill = BaseGroup)) +
+  geom_col(position = "stack") +
+  labs(x = "Top 10 Most Common Effects",
+       y = "Number of Species Affected",
+       fill = "Species Group") +
+  theme_minimal() +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1, size = 11),
+    axis.text.y = element_text(size = 12),
+    axis.title.x = element_text(size = 14),
+    axis.title.y = element_text(size = 14)
+  )
+
+print(effect_plot)
+
+```
+```{r}
+library(dplyr)
+library(ggplot2)
+library(stringr)
+library(forcats)
+
+# Function to extract base species group
+extract_base_group <- function(x) {
+  sub(";.*", "", x)
+}
+
+# Pool species groups
+Hell_ECOTOX_pooled <- Hell_ECOTOX_Search_AB %>%
+  mutate(BaseGroup = extract_base_group(Species.Group)) %>%
+  mutate(BaseGroup = ifelse(BaseGroup == "Flowers, Trees, Shrubs, Ferns",
+                            "Plants",
+                            BaseGroup)) %>%
+  mutate(BaseGroup = case_when(
+    BaseGroup %in% c("Invertebrates", "Insects/Spiders", 
+                     "Crustaceans", "Molluscs", "Worms") ~ "Invertebrates",
+    TRUE ~ BaseGroup
+  ))
+
+# Count species per effect + pooled species group
+effect_counts <- Hell_ECOTOX_pooled %>% 
+  group_by(Effect.Measurement, BaseGroup) %>%
+  summarise(n_species = n_distinct(X.Species.Common.Name), .groups = "drop")
+
+# Exclude these 3 terms
+exclude_terms <- c(
+  "Multiple measurement terms entered",
+  "Gene expression",
+  "Histological changes, general"
+)
+
+# Identify top 10 effects AFTER exclusions
+top10_effects <- effect_counts %>%
+  filter(!(Effect.Measurement %in% exclude_terms)) %>%
+  group_by(Effect.Measurement) %>%
+  summarise(total_species = sum(n_species)) %>%
+  arrange(desc(total_species)) %>%
+  slice_head(n = 10) %>%
+  pull(Effect.Measurement)
+
+# Filter dataset to top 10 only
+effect_top10 <- effect_counts %>%
+  filter(Effect.Measurement %in% top10_effects) %>%
+  mutate(Effect.Measurement =
+           fct_reorder(Effect.Measurement, n_species, .fun = sum, .desc = TRUE))
+
+# Plot
+effect_plot <- ggplot(effect_top10,
+                      aes(x = Effect.Measurement,
+                          y = n_species,
+                          fill = BaseGroup)) +
+  geom_col(position = "stack") +
+  labs(x = "Top 10 Most Common Effects (Excluding 3 Specified)",
+       y = "Number of Species",
+       fill = "Species Group") +
+  theme_minimal() +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1, size = 11),
+    axis.text.y = element_text(size = 12),
+    axis.title.x = element_text(size = 14),
+    axis.title.y = element_text(size = 14)
+  )
+
+print(effect_plot)
+
+```
+
+```{r}
+library(dplyr)
+library(ggplot2)
+library(stringr)
+library(forcats)
+library(viridis)
+
+extract_base_group <- function(x) {
+  sub(";.*", "", x)
+}
+
+# Pool species groups
+Hell_ECOTOX_pooled <- Hell_ECOTOX_Search_AB %>%
+  mutate(BaseGroup = extract_base_group(Species.Group)) %>%
+  mutate(BaseGroup = ifelse(BaseGroup == "Flowers, Trees, Shrubs, Ferns",
+                            "Plants",
+                            BaseGroup)) %>%
+  mutate(BaseGroup = case_when(
+    BaseGroup %in% c("Invertebrates", "Insects/Spiders",
+                     "Crustaceans", "Molluscs", "Worms") ~ "Invertebrates",
+    TRUE ~ BaseGroup
+  ))
+
+# Count species per effect + pooled species group
+effect_counts <- Hell_ECOTOX_pooled %>% 
+  group_by(Effect.Measurement, BaseGroup) %>%
+  summarise(n_species = n_distinct(X.Species.Common.Name), .groups = "drop")
+
+effect_counts
+
+# Exclude unwanted terms
+exclude_terms <- c(
+  "Multiple measurement terms entered",
+  "Gene expression",
+  "Histological changes, general"
+)
+
+# Top 10 effects
+top10_effects <- effect_counts %>%
+  filter(!(Effect.Measurement %in% exclude_terms)) %>%
+  group_by(Effect.Measurement) %>%
+  summarise(total_species = sum(n_species)) %>%
+  arrange(desc(total_species)) %>%
+  slice_head(n = 10) %>%
+  pull(Effect.Measurement)
+
+# Filter to top 10 only
+effect_top10 <- effect_counts %>%
+  filter(Effect.Measurement %in% top10_effects) %>%
+  mutate(Effect.Measurement = case_when(
+    Effect.Measurement == "Superoxide dismutase (SOD) enzyme activity" ~ 
+      "Superoxide dismutase (SOD)\nenzyme activity",  # ← newline added
+    TRUE ~ Effect.Measurement
+  )) %>%
+  mutate(Effect.Measurement =
+           fct_reorder(Effect.Measurement, n_species, .fun = sum, .desc = TRUE))
+
+# Horizontal bar plot
+effect_plot <- ggplot(effect_top10,
+                      aes(x = Effect.Measurement,
+                          y = n_species,
+                          fill = BaseGroup)) +
+  geom_col(position = "stack") +
+  coord_flip() +
+  labs( x= "",
+        y = "Species Studied",,
+       fill = "") +
+  scale_fill_viridis_d(option = "viridis", direction = 1) + 
+  theme_minimal() +
+  theme(   
+    legend.text = element_text(size = 14, color = "black"),
+    legend.position = c(0.8, 0.87),
+    axis.text.y = element_text(size = 16, color = "black"),
+    axis.text.x = element_text(size = 18, color = "black"),
+    axis.title.x = element_text(size = 11),
+    plot.margin = margin(10, 10, 10, 20)
+  )
+
+
+
+print(effect_plot)
+
+
+ggsave("effect_plot.png", effect_plot, dpi= 300)
+```
+
+```{r}
+
+# Make a working copy (optional)
+df <- Hell_ECOTOX_pooled
+
+length(unique(Hell_ECOTOX_Search_AB$X.Chemical.Name))
+
+# Lowercase version for pattern matching
+df$chem_lower <- tolower(df$X.Chemical.Name)
+
+# Create bins in priority order
+df$bin <- case_when(
+  grepl("sulfonic acid", df$chem_lower) ~ "sulfonic acid",
+  grepl("acid", df$chem_lower) ~ "acid",
+  grepl("sulfonamide", df$chem_lower) ~ "sulfonamide",
+  TRUE ~ "precursors"
+)
+
+# Extract unique names in each bin
+unique_sulfonic       <- unique(df$X.Chemical.Name[df$bin == "sulfonic acid"])
+unique_acid           <- unique(df$X.Chemical.Name[df$bin == "acid"])
+unique_sulfonamide    <- unique(df$X.Chemical.Name[df$bin == "sulfonamide"])
+unique_precursors     <- unique(df$X.Chemical.Name[df$bin == "precursors"])
+
+# Print precursor list for review
+cat("Chemicals classified as PRECURSORS:\n")
+print(unique_precursors)
+
+# Save results back into your original dataframe
+Hell_ECOTOX_pooled$bin <- df$bin
+
+```
+
+```{r}
+#try to plot this
+library(dplyr)
+library(forcats)
+library(ggplot2)
+library(viridis)
+
+#---------------------------------------------------------
+# 1. Count unique effects per BIN × BaseGroup
+#---------------------------------------------------------
+
+effect_counts_bin <- Hell_ECOTOX_pooled %>%
+  filter(!is.na(bin)) %>%   # keep only rows that have bins
+  group_by(bin, BaseGroup) %>%
+  summarise(n_effects = n_distinct(Effect.Measurement),
+            .groups = "drop")
+
+#---------------------------------------------------------
+# 2. Set the bin order for the Y-axis
+#---------------------------------------------------------
+
+effect_counts_bin$bin <- factor(
+  effect_counts_bin$bin,
+  levels = c("sulfonic acid", "acid", "sulfonamide", "precursors")
+)
+
+#---------------------------------------------------------
+# 3. Plot
+#---------------------------------------------------------
+
+effect_bin_plot <- ggplot(effect_counts_bin,
+                          aes(y = bin,
+                              x = n_effects,
+                              fill = BaseGroup)) +
+  geom_col(position = "stack") +
+  labs(
+    x = "Total Unique Effects",
+    y = "Chemical Category",
+    fill = "Species Group"
+  ) +
+  scale_fill_viridis_d(option = "viridis", direction = 1) +
+  theme_minimal() +
+  theme(
+    legend.position = c(0.8, 0.8),
+    axis.text.y = element_text(size = 12),
+    axis.text.x = element_text(size = 12),
+    axis.title = element_text(size = 12)
+  )
+
+print(effect_bin_plot)
+ggsave("effect_bin_chemicals_plot.png", effect_bin_plot, dpi= 300)
+```
+
+```{r}
+#reorganized binning
+library(dplyr)
+
+df <- Hell_ECOTOX_pooled
+df$chem_lower <- tolower(df$X.Chemical.Name)
+
+#-----------------------------------------------------------
+# 1. Base bin assignment using keyword rules
+#    Order of evaluation:
+#    1) PFSAs
+#    2) PFCAs (ACIDS)
+#    3) FASAs (sulfonamides)
+#    4) Precursors
+#-----------------------------------------------------------
+
+df$bin <- case_when(
+  # --- 1. PFSAs ---
+  grepl("sulfonic acid", df$chem_lower) |
+    grepl("sulfonate", df$chem_lower) ~ "PFSAs",
+  
+  # --- 2. PFCAs (ACIDS) ---
+  grepl("acid", df$chem_lower) |
+    grepl("ate$", df$chem_lower) ~ "PFCAs",
+  
+  # --- 3. FASAs (sulfonamides) ---
+  grepl("sulfonamide", df$chem_lower) ~ "FASAs",
+  
+  # --- 4. Everything else ---
+  TRUE ~ "Precursors"
+)
+
+table(df$bin)
+
+#-----------------------------------------------------------
+# 2. Manual overrides (custom assignments)
+#    Add chemical names EXACTLY as they appear in df$Chemical.Name
+#uncomment this bit to manual override
+#-----------------------------------------------------------
+
+#manual_overrides <- c(
+  # "Chemical Name" = "BinName"
+  # Example:
+  # "PFOSA" = "FASAs"
+#)
+
+#df$bin <- ifelse(
+ # df$Chemical.Name %in% names(manual_overrides),
+ # manual_overrides[df$Chemical.Name],
+ # df$bin
+#)
+
+```
+#unique chemicals per bin
+```{r}
+unique_compounds_table <- Hell_ECOTOX_pooled %>%
+  filter(!is.na(bin)) %>%
+  distinct(bin, X.Chemical.Name) %>%
+  arrange(bin, X.Chemical.Name)
+
+write.csv(unique_compounds_table, "unique_compounds_table.csv")
+```
+
+```{r}
+#reread in the chemical names bins csv thats manually been fixed
+unique_compounds_table<- read.csv("unique_compounds_table.csv", header = TRUE)
+```
+
+```{r}
+#this chunk is wrong do not use
+effect_counts <- merged_tbl %>%
+  group_by(Effect.Measurement) %>%
+  summarise(total_effects = n(), .groups = "drop") %>%
+  arrange(desc(total_effects))
+
+top10_effects <- effect_counts %>%
+  slice_head(n = 10) %>%
+  pull(Effect.Measurement)
+
+top10_tbl <- merged_tbl %>%
+  filter(Effect.Measurement %in% top10_effects) %>%
+  group_by(Effect.Measurement, BaseGroup) %>%
+  summarise(n_effects = n(), .groups = "drop")
+
+top10_tbl <- top10_tbl %>%
+  mutate(Effect.Measurement =
+           fct_reorder(Effect.Measurement, n_effects, .fun = sum, .desc = TRUE))
+
+bin_plot_compounds <- ggplot(top10_tbl,
+                             aes(x = Effect.Measurement,
+                                 y = n_effects,
+                                 fill = BaseGroup)) +
+  geom_col(position = "stack") +
+  coord_flip() +
+  labs(
+    x = "",
+    y = "Number of Effects Reported",
+    fill = ""
+  ) +
+  scale_fill_viridis_d(option = "viridis", direction = 1) +
+  theme_minimal() +
+  theme(
+    legend.text = element_text(size = 12, color = "black"),
+    legend.position = c(0.8, 0.8),
+    axis.text.y = element_text(size = 12, color = "black"),
+    axis.text.x = element_text(size = 12, color = "black"),
+    axis.title.x = element_text(size = 11),
+    plot.margin = margin(10, 10, 10, 20)
+  )
+
+print(bin_plot_compounds)
+
+
+```
+```{r}
+bin_summary <- merged_tbl %>%
+  group_by(bin.y, BaseGroup) %>%
+  summarise(n_effects = n_distinct(Effect.Measurement), .groups = "drop")
+
+bin_summary <- bin_summary %>%
+  mutate(bin.y = fct_reorder(bin.y, n_effects, .fun = sum, .desc = TRUE))
+
+bin_plot_compounds <- ggplot(bin_summary,
+                             aes(x = bin.y,
+                                 y = n_effects,
+                                 fill = BaseGroup)) +
+  geom_col(position = "stack") +
+  coord_flip() +
+  labs(
+    x = "",
+    y = "Number of Effects Reported",
+    fill = "Species Group"
+  ) +
+  scale_fill_viridis_d(option = "viridis", direction = 1) +
+  theme_minimal() +
+  theme(
+    legend.position = c(0.8, 0.8),
+    axis.text.y = element_text(size = 11),
+    axis.text.x = element_text(size = 11),
+    axis.title.x = element_text(size = 11),
+    plot.margin = margin(10, 10, 10, 20)
+  )
+
+print(bin_plot_compounds)
+
+```
+```{r}
+#try again 
+
+# Read the CSV files
+table2 <- read.csv("Hell_ECOTOX_Search_AB.csv")
+table1 <- read.csv("table1_USETHIS.csv")
+
+# Optional: make sure the shared column names match exactly
+# If table 2 column is named differently, rename here:
+# table2 <- rename(table2, X.Chemical.Name = Chemical.Name)
+
+# Perform a left join (many-to-one merge) based on the chemical name
+Table12 <- table2 %>%
+  left_join(
+    table1 %>% select(X.Chemical.Name, bin, Acronym, Chain.length),
+    by = "X.Chemical.Name"
+  )
+
+# Write result to a new CSV
+write.csv(Table12, "Table12.csv")
+
+#now parse for species groups for the legend
+
+# Define the function
+extract_base_group <- function(x) {
+  sub(";.*", "", x)  # keeps everything before the first semicolon
+}
+
+# Add BaseGroup column
+Table12 <- Table12 %>%
+  mutate(BaseGroup = extract_base_group(Species.Group)) %>%
+  mutate(BaseGroup = ifelse(BaseGroup == "Flowers, Trees, Shrubs, Ferns",
+                            "Plants",
+                            BaseGroup)) %>%
+  mutate(BaseGroup = case_when(
+    BaseGroup %in% c("Invertebrates", "Insects/Spiders",
+                     "Crustaceans", "Molluscs", "Worms") ~ "Invertebrates",
+    TRUE ~ BaseGroup
+  ))
+
+#Now make plot
+
+# Summarize data: counts per bin and BaseGroup
+bin_summary <- Table12 %>%
+  filter(!is.na(bin)) %>%  # Remove NA bins
+  group_by(bin, BaseGroup) %>%
+  summarise(n_effects = n(), .groups = "drop")
+
+# Calculate total effects per bin to order them
+bin_totals <- bin_summary %>%
+  group_by(bin) %>%
+  summarise(total_effects = sum(n_effects), .groups = "drop") %>%
+  arrange(total_effects)
+
+# Convert bin to a factor ordered by total effects (largest at top)
+bin_summary <- bin_summary %>%
+  mutate(bin = factor(bin, levels = rev(bin_totals$bin)))  # rev() to put largest at top
+
+# Horizontal stacked bar chart
+bin_plot_horizontal <- ggplot(bin_summary, aes(y = bin, x = n_effects, fill = BaseGroup)) +
+  geom_col(position = "stack") +
+  labs(
+    x = "Number of Effects",
+    y = "",
+    fill = "Species Group"
+  ) +
+  scale_fill_viridis_d(option = "viridis", direction = 1) +
+  theme_minimal() +
+  theme(
+    legend.text = element_text(color = "black"),
+    legend.position = c(0.8, 0.8),
+    axis.text.y = element_text(size = 11, color = "black"),
+    axis.text.x = element_text(size = 11, color = "black"),
+    axis.title.y = element_text(size = 11),
+    plot.margin = margin(10, 10, 10, 20)
+  )
+
+print(bin_plot_horizontal)
+
+```
+
+```{r}
+library(ggplot2)
+library(dplyr)
+library(viridis)
+
+# Summarize data: counts per bin and BaseGroup
+bin_summary <- Table12 %>%
+  filter(!is.na(bin)) %>%  # Remove NA bins
+  group_by(bin, BaseGroup) %>%
+  summarise(n_effects = n(), .groups = "drop")
+
+# Calculate total effects per bin to order them
+bin_totals <- bin_summary %>%
+  group_by(bin) %>%
+  summarise(total_effects = sum(n_effects), .groups = "drop") %>%
+  arrange(total_effects)
+
+# Convert bin to a factor ordered by total effects (largest at top)
+bin_summary <- bin_summary %>%
+  mutate(bin = factor(bin, levels = rev(bin_totals$bin)))  # rev() puts largest at top
+
+# Define new labels for the plot
+bin_labels <- c(
+  "sulfonamide" = "FASAs",
+  "phosphinic acid" = "PFPAs",
+  "precursors" = "Precursors",
+  "carboxylic acid" = "PFCAs",
+  "sulfonic acid" = "PFSAs"
+)
+
+# Horizontal stacked bar chart with relabeled bins
+bin_plot_horizontal <- ggplot(bin_summary, aes(y = bin, x = n_effects, fill = BaseGroup)) +
+  geom_col(position = "stack") +
+  labs(
+    x = "Number of Effects",
+    y = "",
+    fill = ""
+  ) +
+  scale_fill_viridis_d(option = "viridis", direction = 1) +
+  scale_y_discrete(labels = bin_labels) +  # Relabel bins on plot only
+  theme_minimal() +
+  theme(
+    legend.text = element_text(size = 14, color = "black"),
+    legend.position = c(0.86, 0.8),
+    axis.text.y = element_text(size = 18, color = "black"),
+    axis.text.x = element_text(size = 18, color = "black"),
+    axis.title.y = element_text(size = 16, color = "black"),
+    #plot.margin = margin(10, 10, 10, 20)
+  )
+
+print(bin_plot_horizontal)
+
+ggsave("bin_plot_horizontal.png", bin_plot_horizontal, dpi= 300)
+
+```
+```{r}
+#New plot
+
+library(ggplot2)
+library(dplyr)
+library(viridis)
+
+# Summarize data: counts per bin and Acronym
+bin_summary_acronym <- Table12 %>%
+  filter(!is.na(bin)) %>%  # Remove NA bins
+  mutate(Acronym = ifelse(is.na(Acronym) | Acronym == "", "Others", Acronym)) %>%  # Replace NAs or blanks
+  group_by(bin, Acronym) %>%
+  summarise(n_effects = n(), .groups = "drop")
+
+# Calculate total effects per bin to order them
+bin_totals <- bin_summary_acronym %>%
+  group_by(bin) %>%
+  summarise(total_effects = sum(n_effects), .groups = "drop") %>%
+  arrange(total_effects)
+
+# Convert bin to a factor ordered by total effects (largest at top)
+bin_summary_acronym <- bin_summary_acronym %>%
+  mutate(bin = factor(bin, levels = rev(bin_totals$bin)))  # rev() to put largest at top
+
+# Optional: relabel bins on plot only
+bin_labels <- c(
+  "sulfonamide" = "FASAs",
+  "phosphinic acid" = "PFPAs",
+  "precursors" = "Precursors",
+  "carboxylic acid" = "PFCAs",
+  "sulfonic acid" = "PFSAs"
+)
+
+# Horizontal stacked bar chart with Acronyms as fill
+bin_plot_acronym <- ggplot(bin_summary_acronym, aes(y = bin, x = n_effects, fill = Acronym)) +
+  geom_col(position = "stack", color = "gray", size = 0.2) +
+  labs(
+    x = "Number of Effects",
+    y = "",
+    fill = "Acronym"
+  ) +
+  scale_fill_viridis_d(option = "viridis", direction = 1) +
+  scale_y_discrete(labels = bin_labels) +  # Relabel bins on plot only
+  theme_minimal() +
+  theme(
+    legend.position = "right",
+    axis.text.y = element_text(size = 11),
+    axis.text.x = element_text(size = 11),
+    axis.title.y = element_text(size = 11),
+    plot.margin = margin(10, 10, 10, 20)
+  )
+
+print(bin_plot_acronym)
+
+ggsave("bin_plot_acronym.png", bin_plot_acronym, dpi = 300)
+```
+
+```{r}
+
+#facet wrapped option
+library(ggplot2)
+library(dplyr)
+library(viridis)
+
+# Prepare data: replace NA Acronyms with "Others"
+bin_summary_acronym <- Table12 %>%
+  filter(!is.na(bin)) %>%
+  mutate(Acronym = ifelse(is.na(Acronym) | Acronym == "", "Others", Acronym)) %>%
+  group_by(bin, Acronym) %>%
+  summarise(n_effects = n(), .groups = "drop")
+
+# Calculate total effects per bin to order them
+bin_totals <- bin_summary_acronym %>%
+  group_by(bin) %>%
+  summarise(total_effects = sum(n_effects), .groups = "drop") %>%
+  arrange(total_effects)
+
+# Order bins by total effects (largest at top)
+bin_summary_acronym <- bin_summary_acronym %>%
+  mutate(bin = factor(bin, levels = rev(bin_totals$bin)))
+
+# Optional: relabel bins on plot only
+bin_labels <- c(
+  "sulfonamide" = "FASAs",
+  "phosphinic acid" = "PFPAs",
+  "precursors" = "Precursors",
+  "carboxylic acid" = "PFCAs",
+  "sulfonic acid" = "PFSAs"
+)
+
+# Horizontal stacked bar chart, with one facet per bin
+bin_plot_acronym_facet <- ggplot(bin_summary_acronym, aes(x = n_effects, y = Acronym, fill = Acronym)) +
+  geom_col() +
+  facet_wrap(~bin, scales = "free_y") +  # one facet per bin
+  labs(
+    x = "Number of Effects",
+    y = "Acronym",
+    fill = "Acronym"
+  ) +
+  scale_fill_viridis_d(option = "viridis", direction = 1) +
+  theme_minimal() +
+  theme(
+    legend.position = "none",  # optional: remove legend since colors are per facet
+    strip.text = element_text(size = 11),  # facet labels
+    axis.text.y = element_text(size = 10),
+    axis.text.x = element_text(size = 11),
+    axis.title.y = element_text(size = 11),
+    plot.margin = margin(10, 10, 10, 20)
+  )
+
+print(bin_plot_acronym_facet)
+
+```
+
+```{r}
+install.packages("ghibli")
+library(ghibli)
+```
+
+```{r}
+
+```
+

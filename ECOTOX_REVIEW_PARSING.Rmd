@@ -1,0 +1,335 @@
+---
+title: "Molec Effects PFAS Review"
+author: "Kylie"
+date: "2025-11-06"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## R Markdown
+#Ctrl+alt+i shortcut for new code chunk
+```{r, eval=FALSE}
+install.packages("installr")
+library(installr)
+
+updateR()
+
+```
+
+```{r, eval=FALSE}
+install.packages("stringr")
+install.packages("readr")
+install.packages("ggplot2")
+install.packages("tidyverse")
+
+library(stringr)
+library(readr)
+library(ggplot2)
+library(tidyverse)
+
+setwd("C:/Users/KGLaw/Desktop/Notre_Dame_Files/Extra/ECOTOX_review")
+getwd()
+```
+
+```{r}
+#combined ECOTOX Aquatic reports in BASH before this
+#Aquatic report params from ecotox database are noted in my lab notebook
+#seperate fish and other spp reports were generated because databse can only export max 10000 entries at once
+Combined_Aquatic_Report<- read.csv(file = "Combined_AquaticReport.txt", header = TRUE, sep = ",")
+
+```
+
+```{r}
+
+#count unique values of species, Chemicals, and Effects 
+length(unique(Combined_Aquatic_Report$Species.Common.Name))
+length(unique(Combined_Aquatic_Report$Chemical.Name))
+length(unique(Combined_Aquatic_Report$Effect.Measurement))
+
+#return total values of each sanity check
+length(Combined_Aquatic_Report$Species.Common.Name)
+length(Combined_Aquatic_Report$Chemical.Name)
+length(Combined_Aquatic_Report$Effect.Measurement)
+
+#table value counts
+table(Combined_Aquatic_Report$CAS.Number)
+table(Combined_Aquatic_Report$Chemical.Name)
+table(Combined_Aquatic_Report$Effect)
+
+#table unique value counts
+table(unique(Combined_Aquatic_Report$Species.Common.Name))
+table(unique(Combined_Aquatic_Report$Chemical.Name))
+table(unique(Combined_Aquatic_Report$Effect))
+
+```
+
+
+```{r}
+#Add common name conventions
+
+#table of most common PFAS acronyms from https://pfas-1.itrcweb.org/2-2-chemistry-terminology-and-acronyms/#t2_2_n_2
+#read in table
+PFAS_Naming_Conv_table <- read.csv("PFAS Naming Conventions.csv")
+
+#match up based on CAS number
+
+#first remove dashes from CAS numbers for naming conventions
+
+
+# Clean both data frames first
+PFAS_Naming_Conv_table_clean <- PFAS_Naming_Conv_table %>%
+  mutate(CAS.Number = gsub("-", "", CAS.Number)) %>%
+  select(CAS.Number, Acronym)  # Keep only join key and desired column
+
+Combined_Aquatic_Report_clean <- Combined_Aquatic_Report %>%
+  mutate(CAS.Number = gsub("-", "", CAS.Number))
+
+# Join using the cleaned key
+result_practice <- Combined_Aquatic_Report_clean %>%
+  left_join(PFAS_Naming_Conv_table_clean, by = "CAS.Number")
+
+print(result_practice)
+
+unique(result_practice$Acronym)
+
+
+```
+
+```{r}
+#Add more abbreviations
+##From SI Wicks et al 2025
+PFAS_Naming_Conv_table_2 <- read.csv("C:/../PFAS_Names_Ex2_1.csv")
+
+#match up based on CAS number
+
+#first remove dashes from CAS numbers for naming conventions
+
+
+# Clean both data frames first
+PFAS_Naming_Conv_table_clean_2 <- PFAS_Naming_Conv_table_2 %>%
+  mutate(CAS.Number = gsub("-", "", CAS.Number)) %>%
+  select(CAS.Number, Acronym)  # Keep only join key and desired column
+
+Combined_Aquatic_Report_clean <- Combined_Aquatic_Report %>%
+  mutate(CAS.Number = gsub("-", "", CAS.Number))
+
+# Join using the cleaned key
+result_practice <- Combined_Aquatic_Report_clean %>%
+  left_join(PFAS_Naming_Conv_table_clean_2, by = "CAS.Number")
+
+print(result_practice)
+
+unique(result_practice$Acronym)
+
+
+```
+
+
+
+```{r}
+#see how many unique compounds still do not have acronyms
+Remainder_to_name<- unique(result_practice$Chemical.Name[is.na(result_practice$Acronym)])
+
+#googled abbreviations- some may be salts of other abbreviations, in which case they were
+#referred to based on their non-salt abbreviation
+
+#KL 11/10/25 this is "PFAS Naming Conventions_Ex3.csv saved in wd 
+Names_Matched<- read.csv("PFAS Naming Conventions_Ex3.csv", header = FALSE)
+
+#add headers
+colnames(Names_Matched)<- c("old","Acronym","Chemical.Name")
+
+#ChatGPT help me join 
+Final_Combined_Named_Report <- full_join(Names_Matched, result_practice, by = "Chemical.Name", suffix = c(".df1", ".df2")) %>%
+  mutate(
+    Acronym = coalesce(Acronym.df1, Acronym.df2)  # take whichever isn’t NA
+  ) %>%
+  select(Chemical.Name, Acronym, everything(), -Acronym.df1, -Acronym.df2)
+
+#check non filled in
+
+Final_Combined_Named_Report %>%
+  filter(is.na(Acronym))
+
+length(unique(Final_Combined_Named_Report$Chemical.Name[is.na(Final_Combined_Named_Report$Acronym)]))
+length(unique(result_practice$Chemical.Name[is.na(result_practice$Acronym)]))
+
+
+clean_names <- function(x) {
+  x %>%
+    mutate(
+      Chemical.Name = trimws(Chemical.Name),         # remove leading/trailing spaces
+      Chemical.Name = tolower(Chemical.Name)         # make case-insensitive
+    )
+}
+
+Names_Matched <- clean_names(Names_Matched)
+result_practice <- clean_names(result_practice)
+
+Final_Combined_Named_Report <- full_join(
+  Names_Matched, result_practice, by = "Chemical.Name", suffix = c(".df1", ".df2")
+) %>%
+  mutate(
+    Acronym = coalesce(Acronym.df1, Acronym.df2)
+  ) %>%
+  select(Chemical.Name, Acronym, everything(), -Acronym.df1, -Acronym.df2)
+
+
+sum(is.na(Final_Combined_Named_Report$Acronym))
+
+
+#okay finally got the join to work
+#thanks ChatGPT
+#Combined report is named Final_Combined_Named_Report
+
+```
+```{r}
+#visualize organisms by PFAS type
+
+#Make a table of how many PFAS and spp
+PFAS_Spp_table<- as.data.frame(table(Final_Combined_Named_Report$Acronym, Final_Combined_Named_Report$Species.Common.Name))
+
+#export for pivot table
+write.csv(PFAS_Spp_table, file = "ECOTOX_PFAS_spp_counts.csv", row.names = FALSE)
+```
+
+
+```{r}
+#summary stats
+
+# Example summary
+summary_df <- Final_Combined_Named_Report %>%
+  group_by(Effect) %>%
+  summarise(
+    n_occurrences = n(),                          # total rows in each category
+    n_unique_chemicals = n_distinct(Acronym),    # number of unique chemicals
+    n_unique_species = n_distinct(Species.Common.Name)        # optional: unique species
+  )
+
+# View result
+print(summary_df)
+
+```
+
+```{r}
+# make summary tables per each effect category bin
+
+
+# Filter to Biochemistry, then group by effect
+biochem_species_effect <- Final_Combined_Named_Report %>%
+  filter(Effect == "Biochemistry") %>%
+  group_by(Effect.Measurement) %>%
+  summarise(
+    n_unique_species   = n_distinct(Species.Common.Name),
+    n_unique_chemicals = n_distinct(Acronym),
+    species_list       = paste(unique(Species.Common.Name), collapse = ", "),
+    compound_list      = paste(unique(Acronym), collapse = ", "),
+    citations_list     = paste(unique(Citation), collapse = ", ")
+  ) %>%
+  arrange(desc(n_unique_species))
+
+
+# Filter to Genetics, then group by effect
+genetics_species_effect <- Final_Combined_Named_Report %>%
+  filter(Effect == "Genetics") %>%
+  group_by(Effect.Measurement) %>%
+  summarise(
+    n_unique_species   = n_distinct(Species.Common.Name),
+    n_unique_chemicals = n_distinct(Acronym),
+    species_list       = paste(unique(Species.Common.Name), collapse = ", "),
+    compound_list      = paste(unique(Acronym), collapse = ", "),
+    citations_list     = paste(unique(Citation), collapse = ", ")
+  ) %>%
+  arrange(desc(n_unique_species))
+
+
+# Filter to Enzyme(s), then group by effect
+enzyme_species_effect <- Final_Combined_Named_Report %>%
+  filter(Effect == "Enzyme(s)") %>%
+  group_by(Effect.Measurement) %>%
+  summarise(
+    n_unique_species   = n_distinct(Species.Common.Name),
+    n_unique_chemicals = n_distinct(Acronym),
+    species_list       = paste(unique(Species.Common.Name), collapse = ", "),
+    compound_list      = paste(unique(Acronym), collapse = ", "),
+    citations_list     = paste(unique(Citation), collapse = ", ")
+  ) %>%
+  arrange(desc(n_unique_species))
+
+
+# Filter to Hormone(s), then group by effect
+hormone_species_effect <- Final_Combined_Named_Report %>%
+  filter(Effect == "Hormone(s)") %>%
+  group_by(Effect.Measurement) %>%
+  summarise(
+    n_unique_species   = n_distinct(Species.Common.Name),
+    n_unique_chemicals = n_distinct(Acronym),
+    species_list       = paste(unique(Species.Common.Name), collapse = ", "),
+    compound_list      = paste(unique(Acronym), collapse = ", "),
+    citations_list     = paste(unique(Citation), collapse = ", ")
+  ) %>%
+  arrange(desc(n_unique_species))
+
+
+# Filter to Immunological, then group by effect
+Immunological_species_effect <- Final_Combined_Named_Report %>%
+  filter(Effect == "Immunological") %>%
+  group_by(Effect.Measurement) %>%
+  summarise(
+    n_unique_species   = n_distinct(Species.Common.Name),
+    n_unique_chemicals = n_distinct(Acronym),
+    species_list       = paste(unique(Species.Common.Name), collapse = ", "),
+    compound_list      = paste(unique(Acronym), collapse = ", "),
+    citations_list     = paste(unique(Citation), collapse = ", ")
+  ) %>%
+  arrange(desc(n_unique_species))
+
+
+# Filter to Cell(s), then group by effect
+Cells_species_effect <- Final_Combined_Named_Report %>%
+  filter(Effect == "Cell(s)") %>%
+  group_by(Effect.Measurement) %>%
+  summarise(
+    n_unique_species   = n_distinct(Species.Common.Name),
+    n_unique_chemicals = n_distinct(Acronym),
+    species_list       = paste(unique(Species.Common.Name), collapse = ", "),
+    compound_list      = paste(unique(Acronym), collapse = ", "),
+    citations_list     = paste(unique(Citation), collapse = ", ")
+  ) %>%
+  arrange(desc(n_unique_species))
+
+
+# Filter to Histology, then group by effect
+histology_species_effect <- Final_Combined_Named_Report %>%
+  filter(Effect == "Histology") %>%
+  group_by(Effect.Measurement) %>%
+  summarise(
+    n_unique_species   = n_distinct(Species.Common.Name),
+    n_unique_chemicals = n_distinct(Acronym),
+    species_list       = paste(unique(Species.Common.Name), collapse = ", "),
+    compound_list      = paste(unique(Acronym), collapse = ", "),
+    citations_list     = paste(unique(Citation), collapse = ", ")
+  ) %>%
+  arrange(desc(n_unique_species))
+
+# Note: dplyr automatically ungroups after summarise()
+# Check with:
+# dplyr::is_grouped_df(biochem_species_effect)
+
+```
+
+```{r}
+#save the df output above as CSVs in my ecotox wd
+write.csv(Final_Combined_Named_Report, "C:/../ECOTOX_review/Final_Combined_Named_Report.csv")
+write.csv(biochem_species_effect, "C:/../ECOTOX_review/biochem_doi_summary.csv")
+write.csv(histology_species_effect, "C:/../ECOTOX_review/histology_doi_summary.csv")
+write.csv(Immunological_species_effect, "C:/../ECOTOX_review/immunological_doi_summary.csv")
+write.csv(Cells_species_effect, "C:/../ECOTOX_review/cell_doi_summary.csv")
+write.csv(hormone_species_effect, "C:/../ECOTOX_review/hormone_doi_summary.csv")
+write.csv(genetics_species_effect, "C:/../ECOTOX_review/genetics_doi_summary.csv")
+write.csv(enzyme_species_effect, "C:/../ECOTOX_review/enzyme_doi_summary.csv")
+```
+
